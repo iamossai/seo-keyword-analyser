@@ -11,12 +11,47 @@ function extractJson(text) {
   let t = text.trim();
   // strip ```json ... ``` fences if present
   t = t.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-  // grab the outermost JSON object
+  // grab from the first { to the last } (fall back to open-ended if truncated)
   const first = t.indexOf("{");
+  if (first === -1) throw new Error("No JSON object found in AI response.");
   const last = t.lastIndexOf("}");
-  if (first === -1 || last === -1) throw new Error("No JSON object found in AI response.");
-  const slice = t.slice(first, last + 1);
-  return JSON.parse(slice);
+  let slice = last > first ? t.slice(first, last + 1) : t.slice(first);
+
+  // 1) try as-is
+  try {
+    return JSON.parse(slice);
+  } catch (_) {}
+
+  // 2) remove trailing commas before } or ]
+  let repaired = slice.replace(/,\s*([}\]])/g, "$1");
+  try {
+    return JSON.parse(repaired);
+  } catch (_) {}
+
+  // 3) last-ditch: balance any unclosed brackets/braces (handles truncation)
+  try {
+    let depthCurly = 0;
+    let depthSquare = 0;
+    let inStr = false;
+    let esc = false;
+    for (const ch of repaired) {
+      if (esc) { esc = false; continue; }
+      if (ch === "\\") { esc = true; continue; }
+      if (ch === '"') inStr = !inStr;
+      if (inStr) continue;
+      if (ch === "{") depthCurly++;
+      else if (ch === "}") depthCurly--;
+      else if (ch === "[") depthSquare++;
+      else if (ch === "]") depthSquare--;
+    }
+    if (inStr) repaired += '"';
+    repaired += "]".repeat(Math.max(0, depthSquare));
+    repaired += "}".repeat(Math.max(0, depthCurly));
+    repaired = repaired.replace(/,\s*([}\]])/g, "$1");
+    return JSON.parse(repaired);
+  } catch (_) {}
+
+  throw new Error("Invalid JSON structure in AI response.");
 }
 
 async function callGemini({ apiKey, model, system, user }) {
@@ -29,8 +64,11 @@ async function callGemini({ apiKey, model, system, user }) {
       contents: [{ role: "user", parts: [{ text: user }] }],
       generationConfig: {
         temperature: 0.4,
-        maxOutputTokens: 4096,
+        maxOutputTokens: 8192,
         responseMimeType: "application/json",
+        // Disable "thinking" so the full token budget goes to the JSON answer
+        // (prevents truncated/invalid JSON on gemini-2.5-flash).
+        thinkingConfig: { thinkingBudget: 0 },
       },
     }),
   });

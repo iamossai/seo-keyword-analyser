@@ -335,10 +335,7 @@ export default function Home() {
         </div>
       </div>
 
-      <footer>
-        Built with Next.js · AI provider configured via environment variables · No article text is
-        stored.
-      </footer>
+      <footer>Built by Ossai Samuel</footer>
     </div>
   );
 }
