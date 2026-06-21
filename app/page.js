@@ -77,7 +77,15 @@ export default function Home() {
 
   const k = data?.keywords;
   const allKeywords = data
-    ? [k?.primary, ...(k?.secondary || [])].filter(Boolean).join(", ")
+    ? [
+        k?.primary,
+        ...(k?.secondary || []),
+        ...(k?.semantic || []),
+        ...(k?.questions || []),
+        ...(k?.longTail || []),
+      ]
+        .filter(Boolean)
+        .join(", ")
     : "";
 
   return (
@@ -144,8 +152,8 @@ export default function Home() {
             <div className="placeholder">
               <p>Paste a story and click <strong>Check my story</strong>.</p>
               <p style={{ fontSize: 13.5 }}>
-                You’ll get headline options, the main keywords, a search snippet, a URL slug, and a
-                short pre-publish checklist.
+                You’ll get headline options, keywords (ordered by importance), a search snippet, a
+                URL slug, and a short pre-publish checklist.
               </p>
             </div>
           )}
@@ -228,17 +236,14 @@ export default function Home() {
                       </div>
                     </>
                   )}
-                  {k.secondary?.length > 0 && (
-                    <>
-                      <div style={{ fontSize: 12, color: "var(--muted)", margin: "14px 0 6px", fontWeight: 600 }}>ALSO INCLUDE</div>
-                      <div className="chips">
-                        {k.secondary.map((it, i) => (
-                          <span className="chip" key={i}>{it}</span>
-                        ))}
-                      </div>
-                    </>
+                  {/* keyword groups, ordered by importance */}
+                  {k.secondary?.length > 0 && <Group label="Secondary" items={k.secondary} />}
+                  {k.semantic?.length > 0 && <Group label="Semantic / LSI" items={k.semantic} />}
+                  {k.questions?.length > 0 && (
+                    <Group label="Questions (FAQ / AI Overviews)" items={k.questions} />
                   )}
-                  {k.usageTip && <div className="why" style={{ marginTop: 10 }}>{k.usageTip}</div>}
+                  {k.longTail?.length > 0 && <Group label="Long-tail" items={k.longTail} />}
+                  {k.usageTip && <div className="why" style={{ marginTop: 12 }}>{k.usageTip}</div>}
                   {allKeywords && (
                     <div style={{ marginTop: 10 }}>
                       <Copyable text={allKeywords}>Copy all keywords</Copyable>
@@ -285,5 +290,20 @@ export default function Home() {
 
       <footer>Built by Ossai Samuel</footer>
     </div>
+  );
+}
+
+function Group({ label, items }) {
+  return (
+    <>
+      <div style={{ fontSize: 12, color: "var(--muted)", margin: "14px 0 6px", fontWeight: 600 }}>
+        {label.toUpperCase()}
+      </div>
+      <div className="chips">
+        {items.map((it, i) => (
+          <span className="chip" key={i}>{it}</span>
+        ))}
+      </div>
+    </>
   );
 }
