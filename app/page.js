@@ -75,6 +75,19 @@ export default function Home() {
     }
   }
 
+  async function pasteFromClipboard() {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && text.trim()) {
+        setArticle(text);
+        setData(null);
+        setError("");
+      }
+    } catch (e) {
+      setError("Couldn’t read your clipboard. Click in the box and paste with Ctrl/Cmd + V instead.");
+    }
+  }
+
   const k = data?.keywords;
   const allKeywords = data
     ? [
@@ -102,8 +115,15 @@ export default function Home() {
       <div className="grid">
         {/* INPUT */}
         <div className="panel">
-          <h2>Your story</h2>
-          <p className="hint">Paste the full story text below.</p>
+          <div className="panel-head">
+            <div>
+              <h2>Your story</h2>
+              <p className="hint">Paste the full story text below.</p>
+            </div>
+            <button className="ghost" onClick={pasteFromClipboard} disabled={loading}>
+              📋 Paste
+            </button>
+          </div>
           <textarea
             value={article}
             placeholder="Paste your news story here…"
@@ -232,7 +252,7 @@ export default function Home() {
                     <>
                       <div style={{ fontSize: 12, color: "var(--muted)", margin: "2px 0 6px", fontWeight: 600 }}>MAIN KEYWORD</div>
                       <div className="chips">
-                        <span className="chip primary">{k.primary}</span>
+                        <CopyChip text={k.primary} primary />
                       </div>
                     </>
                   )}
@@ -301,9 +321,30 @@ function Group({ label, items }) {
       </div>
       <div className="chips">
         {items.map((it, i) => (
-          <span className="chip" key={i}>{it}</span>
+          <CopyChip text={it} key={i} />
         ))}
       </div>
     </>
+  );
+}
+
+function CopyChip({ text, primary }) {
+  const [ok, setOk] = useState(false);
+  return (
+    <span
+      className={`chip${primary ? " primary" : ""}${ok ? " copied" : ""}`}
+      title="Click to copy"
+      role="button"
+      tabIndex={0}
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          setOk(true);
+          setTimeout(() => setOk(false), 1100);
+        } catch {}
+      }}
+    >
+      {ok ? "✓ Copied" : text}
+    </span>
   );
 }
