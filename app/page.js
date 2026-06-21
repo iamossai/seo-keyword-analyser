@@ -3,11 +3,11 @@
 import { useMemo, useState } from "react";
 import { analyzeText } from "../lib/metrics";
 
-const SAMPLE = `Remote work has changed how teams operate. Many companies now let employees work from home. This article looks at the benefits and the challenges.
+const SAMPLE = `City council approved a new $40 million budget last night to repair roads and expand public transit across the metro area. The vote passed 7 to 2 after a two-hour debate.
 
-Working remotely can save time on commuting. It also gives people more flexibility. But it can make collaboration harder. Some workers feel isolated.
+Officials said most of the funding will go toward fixing potholes and resurfacing major routes that have deteriorated over the past three winters. About $12 million is set aside to add new bus lines connecting the east side to downtown.
 
-Tools like video calls and chat apps help teams stay connected. Managers need to set clear expectations. Trust is important. With the right approach, remote teams can be very productive.`;
+Residents who attended the meeting were divided. Some praised the focus on transit, while others worried about a possible rise in property taxes to cover the costs. The mayor said the budget would not require a tax increase this year. Work is expected to begin in the spring.`;
 
 function ccClass(n) {
   if (n >= 50 && n <= 60) return "cc-good";
@@ -54,7 +54,7 @@ export default function Home() {
     setError("");
     setData(null);
     if (article.trim().length < 80) {
-      setError("Please paste an article of at least ~80 characters.");
+      setError("Please paste a story of at least ~80 characters.");
       return;
     }
     setLoading(true);
@@ -77,53 +77,47 @@ export default function Home() {
 
   const k = data?.keywords;
   const allKeywords = data
-    ? [k?.primary, ...(k?.secondary || []), ...(k?.semantic || []), ...(k?.longTail || [])]
-        .filter(Boolean)
-        .join(", ")
+    ? [k?.primary, ...(k?.secondary || [])].filter(Boolean).join(", ")
     : "";
 
   return (
     <div className="container">
       <div className="header">
-        <span className="badge"><span className="dot" /> AI-powered on-page SEO</span>
+        <span className="badge"><span className="dot" /> Quick pre-publish SEO check</span>
         <h1>SEO Keyword Analyser</h1>
         <p className="subtitle">
-          Paste an article and get an optimized headline, a complete keyword strategy, and concrete
-          structure fixes — graded against modern 2026 on-page SEO standards.
+          Paste your news story and get the few fixes that matter most before you hit publish — a
+          better headline, the right keywords, the search snippet, and a quick checklist.
         </p>
       </div>
 
       <div className="grid">
         {/* INPUT */}
         <div className="panel">
-          <h2>Your article</h2>
-          <p className="hint">Paste the full article text (plain text or markdown headings).</p>
+          <h2>Your story</h2>
+          <p className="hint">Paste the full story text below.</p>
           <textarea
             value={article}
-            placeholder="Paste your article here…"
+            placeholder="Paste your news story here…"
             onChange={(e) => setArticle(e.target.value)}
           />
           <div className="input-meta">
-            <span>
-              {metrics.wordCount} words · {metrics.readingTime} min read · {metrics.headings.total} headings
-            </span>
-            <span>
-              Readability: {metrics.flesch} ({metrics.readabilityLabel})
-            </span>
+            <span>{metrics.wordCount} words · {metrics.readingTime} min read</span>
+            <span>Readability: {metrics.flesch} ({metrics.readabilityLabel})</span>
           </div>
 
           <div className="controls">
             <input
               type="text"
               value={focus}
-              placeholder="Optional: target/focus keyword"
+              placeholder="Optional: main keyword you're targeting"
               onChange={(e) => setFocus(e.target.value)}
             />
           </div>
 
           <div className="actions">
             <button onClick={analyze} disabled={loading}>
-              {loading ? "Analyzing…" : "Analyze SEO"}
+              {loading ? "Checking…" : "Check my story"}
             </button>
             <button
               className="secondary"
@@ -141,17 +135,17 @@ export default function Home() {
 
         {/* RESULTS */}
         <div className="panel">
-          <h2>SEO report</h2>
+          <h2>Your report</h2>
           <p className="hint">
-            {provider ? `Generated with ${provider}.` : "Recommendations appear here after analysis."}
+            {provider ? `Checked with ${provider}.` : "Your quick fixes appear here."}
           </p>
 
           {!data && !loading && !error && (
             <div className="placeholder">
-              <p>Paste an article and click <strong>Analyze SEO</strong>.</p>
-              <p style={{ fontSize: 13 }}>
-                You’ll get 4 headline options, primary/secondary/semantic/question keywords, a meta
-                description, structure fixes, a recommended outline, content gaps, and scores.
+              <p>Paste a story and click <strong>Check my story</strong>.</p>
+              <p style={{ fontSize: 13.5 }}>
+                You’ll get headline options, the main keywords, a search snippet, a URL slug, and a
+                short pre-publish checklist.
               </p>
             </div>
           )}
@@ -159,13 +153,13 @@ export default function Home() {
           {loading && (
             <div className="placeholder">
               <div className="spinner" />
-              <p className="loadnote">Running the SEO analysis…</p>
+              <p className="loadnote">Checking your story…</p>
             </div>
           )}
 
           {error && (
             <div className="error">
-              <strong>Couldn’t analyze.</strong>
+              <strong>Couldn’t check the story.</strong>
               <div style={{ marginTop: 6 }}>{error}</div>
             </div>
           )}
@@ -179,7 +173,6 @@ export default function Home() {
                     ["overall", "Overall"],
                     ["headline", "Headline"],
                     ["keywords", "Keywords"],
-                    ["structure", "Structure"],
                     ["readability", "Readability"],
                   ].map(([key, lbl]) => (
                     <div className="score" key={key}>
@@ -192,12 +185,11 @@ export default function Home() {
                 </div>
               )}
 
-              {(data.detectedTopic || data.searchIntent) && (
+              {data.detectedTopic && (
                 <div className="block">
-                  <h3>Detected intent</h3>
-                  <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>
+                  <h3>Your story is about</h3>
+                  <p style={{ margin: 0, fontSize: 15, lineHeight: 1.5 }}>
                     <strong>{data.detectedTopic}</strong>
-                    {data.searchIntent ? ` · ${data.searchIntent} intent` : ""}
                   </p>
                 </div>
               )}
@@ -205,7 +197,7 @@ export default function Home() {
               {/* HEADLINES */}
               {data.headlines?.length > 0 && (
                 <div className="block">
-                  <h3>Suggested headlines</h3>
+                  <h3>Better headlines</h3>
                   {data.headlines.map((h, i) => {
                     const n = h.charCount || (h.title ? h.title.length : 0);
                     return (
@@ -224,110 +216,66 @@ export default function Home() {
                 </div>
               )}
 
-              {/* META + SLUG */}
-              {data.metaDescription && (
-                <div className="block">
-                  <h3>Meta description ({data.metaDescription.length} ch)</h3>
-                  <div className="meta-desc">{data.metaDescription}</div>
-                  <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
-                    <Copyable text={data.metaDescription}>Copy meta</Copyable>
-                    {data.slug && <Copyable text={data.slug}>Copy slug: /{data.slug}</Copyable>}
-                  </div>
-                </div>
-              )}
-
               {/* KEYWORDS */}
               {k && (
                 <div className="block">
-                  <h3>Keyword strategy</h3>
-                  <div className="copy-row">
-                    <Copyable text={allKeywords}>Copy all keywords</Copyable>
-                  </div>
+                  <h3>Keywords</h3>
                   {k.primary && (
                     <>
-                      <div style={{ fontSize: 12, color: "var(--muted)", margin: "6px 0 6px" }}>PRIMARY</div>
+                      <div style={{ fontSize: 12, color: "var(--muted)", margin: "2px 0 6px", fontWeight: 600 }}>MAIN KEYWORD</div>
                       <div className="chips">
                         <span className="chip primary">{k.primary}</span>
                       </div>
-                      {k.primaryDensityComment && (
-                        <div className="why" style={{ marginTop: 6 }}>{k.primaryDensityComment}</div>
-                      )}
                     </>
                   )}
                   {k.secondary?.length > 0 && (
-                    <Group label="Secondary" items={k.secondary} />
+                    <>
+                      <div style={{ fontSize: 12, color: "var(--muted)", margin: "14px 0 6px", fontWeight: 600 }}>ALSO INCLUDE</div>
+                      <div className="chips">
+                        {k.secondary.map((it, i) => (
+                          <span className="chip" key={i}>{it}</span>
+                        ))}
+                      </div>
+                    </>
                   )}
-                  {k.semantic?.length > 0 && (
-                    <Group label="Semantic / LSI" items={k.semantic} />
-                  )}
-                  {k.questions?.length > 0 && (
-                    <Group label="Questions (FAQ / AI Overviews)" items={k.questions} />
-                  )}
-                  {k.longTail?.length > 0 && (
-                    <Group label="Long-tail" items={k.longTail} />
+                  {k.usageTip && <div className="why" style={{ marginTop: 10 }}>{k.usageTip}</div>}
+                  {allKeywords && (
+                    <div style={{ marginTop: 10 }}>
+                      <Copyable text={allKeywords}>Copy all keywords</Copyable>
+                    </div>
                   )}
                 </div>
               )}
 
-              {/* STRUCTURE */}
-              {data.structure?.length > 0 && (
+              {/* META + SLUG */}
+              {data.metaDescription && (
                 <div className="block">
-                  <h3>Structure recommendations</h3>
+                  <h3>Search snippet ({data.metaDescription.length} ch)</h3>
+                  <div className="meta-desc">{data.metaDescription}</div>
+                  <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Copyable text={data.metaDescription}>Copy snippet</Copyable>
+                    {data.slug && <Copyable text={data.slug}>Copy URL: /{data.slug}</Copyable>}
+                  </div>
+                </div>
+              )}
+
+              {/* SNIPPET / OPENING TIP */}
+              {data.snippetTip && (
+                <div className="block">
+                  <h3>Opening line tip</h3>
+                  <p style={{ margin: 0, fontSize: 14.5, lineHeight: 1.55 }}>{data.snippetTip}</p>
+                </div>
+              )}
+
+              {/* PRE-PUBLISH CHECKLIST */}
+              {data.quickChecks?.length > 0 && (
+                <div className="block">
+                  <h3>Before you publish</h3>
                   <ul className="recs">
-                    {data.structure.map((s, i) => (
-                      <li key={i} className={`sev-${(s.severity || "low").toLowerCase()}`}>
-                        <span className="tag">{s.type}</span>
-                        <strong>{s.issue}</strong> — {s.recommendation}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* OUTLINE */}
-              {data.suggestedOutline && (
-                <div className="block">
-                  <h3>Recommended outline</h3>
-                  <pre className="outline">{data.suggestedOutline}</pre>
-                  <Copyable text={data.suggestedOutline}>Copy outline</Copyable>
-                </div>
-              )}
-
-              {/* CONTENT GAPS */}
-              {data.contentGaps?.length > 0 && (
-                <div className="block">
-                  <h3>Content gaps to fill</h3>
-                  <ul className="recs">
-                    {data.contentGaps.map((g, i) => (
+                    {data.quickChecks.map((g, i) => (
                       <li key={i}>{g}</li>
                     ))}
                   </ul>
-                </div>
-              )}
-
-              {/* QUICK WINS */}
-              {data.quickWins?.length > 0 && (
-                <div className="block">
-                  <h3>Quick wins (highest impact)</h3>
-                  <ul className="recs">
-                    {data.quickWins.map((g, i) => (
-                      <li key={i} className="sev-high">{g}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {data.snippetTip && (
-                <div className="block">
-                  <h3>Featured snippet / AI Overview</h3>
-                  <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>{data.snippetTip}</p>
-                </div>
-              )}
-
-              {data.eeat && (
-                <div className="block">
-                  <h3>E-E-A-T signals</h3>
-                  <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>{data.eeat}</p>
                 </div>
               )}
             </div>
@@ -337,18 +285,5 @@ export default function Home() {
 
       <footer>Built by Ossai Samuel</footer>
     </div>
-  );
-}
-
-function Group({ label, items }) {
-  return (
-    <>
-      <div style={{ fontSize: 12, color: "var(--muted)", margin: "12px 0 6px" }}>{label.toUpperCase()}</div>
-      <div className="chips">
-        {items.map((it, i) => (
-          <span className="chip" key={i}>{it}</span>
-        ))}
-      </div>
-    </>
   );
 }
