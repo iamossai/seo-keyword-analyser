@@ -54,7 +54,9 @@ function extractJson(text) {
   throw new Error("Invalid JSON structure in AI response.");
 }
 
-async function callGemini({ apiKey, model, system, user }) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function callGeminiOnce({ apiKey, model, system, user }) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   const res = await fetch(url, {
     method: "POST",
@@ -74,11 +76,33 @@ async function callGemini({ apiKey, model, system, user }) {
   });
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Gemini API error (${res.status}): ${body.slice(0, 400)}`);
+    const err = new Error(`Gemini API error (${res.status}): ${body.slice(0, 300)}`);
+    err.status = res.status;
+    throw err;
   }
   const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "";
-  return text;
+  return data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "";
+}
+
+// Tries each model in turn, retrying transient errors (overload / rate limit /
+// 5xx) with exponential backoff so a temporary Gemini spike is invisible.
+async function callGemini({ apiKey, models, system, user }) {
+  let lastErr;
+  for (const model of models) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const text = await callGeminiOnce({ apiKey, model, system, user });
+        if (text) return text;
+        lastErr = new Error("Empty response from Gemini.");
+      } catch (e) {
+        lastErr = e;
+        const transient = e.status === 503 || e.status === 429 || (e.status >= 500 && e.status < 600);
+        if (!transient) break; // permanent error for this model — move to next model
+        if (attempt < 2) await sleep(500 * Math.pow(2, attempt)); // 500ms, 1s
+      }
+    }
+  }
+  throw lastErr || new Error("Gemini request failed.");
 }
 
 async function callAnthropic({ apiKey, model, system, user }) {
@@ -130,12 +154,11 @@ export async function POST(req) {
 
     if (geminiKey) {
       provider = "gemini";
-      raw = await callGemini({
-        apiKey: geminiKey,
-        model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-        system,
-        user,
-      });
+      const primary = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+      // Primary first, then lighter / aliased models that tend to stay available
+      // when the primary is under high demand.
+      const models = [...new Set([primary, "gemini-2.5-flash-lite", "gemini-flash-latest"])];
+      raw = await callGemini({ apiKey: geminiKey, models, system, user });
     } else if (anthropicKey) {
       provider = "anthropic";
       raw = await callAnthropic({
@@ -166,9 +189,22 @@ export async function POST(req) {
 
     return NextResponse.json({ provider, result });
   } catch (err) {
-    return NextResponse.json(
-      { error: err?.message || "Unexpected server error." },
-      { status: 500 }
-    );
+    const msg = err?.message || "Unexpected server error.";
+    if (/\b(503|UNAVAILABLE|high demand|overloaded)\b/i.test(msg)) {
+      return NextResponse.json(
+        {
+          error:
+            "The AI model is busy right now (a temporary demand spike on Google’s side). Please wait a few seconds and try again.",
+        },
+        { status: 503 }
+      );
+    }
+    if (/\b429\b|quota|rate limit/i.test(msg)) {
+      return NextResponse.json(
+        { error: "Rate limit reached for now. Please wait a moment and try again." },
+        { status: 429 }
+      );
+    }
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
