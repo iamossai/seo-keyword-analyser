@@ -330,18 +330,26 @@ function Group({ label, items }) {
 
 function CopyChip({ text, primary }) {
   const [ok, setOk] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setOk(true);
+      setTimeout(() => setOk(false), 1100);
+    } catch {}
+  };
   return (
     <span
       className={`chip${primary ? " primary" : ""}${ok ? " copied" : ""}`}
       title="Click to copy"
       role="button"
       tabIndex={0}
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(text);
-          setOk(true);
-          setTimeout(() => setOk(false), 1100);
-        } catch {}
+      aria-label={`Copy keyword: ${text}`}
+      onClick={copy}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          copy();
+        }
       }}
     >
       {ok ? "✓ Copied" : text}

@@ -2,15 +2,21 @@ import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
 
 export const metadata = {
-  title: "SEO Keyword Analyser — AI Headline, Keywords & Structure",
+  title: "SEO Keyword Analyser — Quick Pre-Publish Check for News Stories",
   description:
-    "Paste any article and get an AI-optimized headline, a full keyword strategy (primary, secondary, semantic & question keywords), and concrete structure recommendations based on modern on-page SEO standards.",
-  metadataBase: new URL("https://example.com"),
+    "Paste your news story and get the few fixes that matter most before you publish: a better headline, the right keywords, the search snippet, and a quick pre-publish checklist.",
+  metadataBase: new URL("https://seo-keyword-analyser.vercel.app"),
   openGraph: {
     title: "SEO Keyword Analyser",
     description:
-      "AI-powered on-page SEO: better headlines, keyword strategy, and structure fixes.",
+      "Quick pre-publish SEO check for news stories: headline, keywords, search snippet, and a checklist.",
     type: "website",
+    url: "/",
+  },
+  twitter: {
+    card: "summary",
+    title: "SEO Keyword Analyser",
+    description: "Quick pre-publish SEO check for news stories.",
   },
   robots: { index: true, follow: true },
 };

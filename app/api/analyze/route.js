@@ -56,50 +56,68 @@ function extractJson(text) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function callGeminiOnce({ apiKey, model, system, user }) {
+// One Gemini call with a hard per-request timeout. Without this, a hung
+// upstream connection would block until Vercel kills the function at 60s.
+async function callGeminiOnce({ apiKey, model, system, user, timeoutMs = 13000 }) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: "user", parts: [{ text: user }] }],
-      generationConfig: {
-        temperature: 0.4,
-        maxOutputTokens: 8192,
-        responseMimeType: "application/json",
-        // Disable "thinking" so the full token budget goes to the JSON answer
-        // (prevents truncated/invalid JSON on gemini-2.5-flash).
-        thinkingConfig: { thinkingBudget: 0 },
-      },
-    }),
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    const err = new Error(`Gemini API error (${res.status}): ${body.slice(0, 300)}`);
-    err.status = res.status;
-    throw err;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: "user", parts: [{ text: user }] }],
+        generationConfig: {
+          temperature: 0.4,
+          maxOutputTokens: 8192,
+          responseMimeType: "application/json",
+          // Disable "thinking" so the full token budget goes to the JSON answer.
+          thinkingConfig: { thinkingBudget: 0 },
+        },
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      const err = new Error(`Gemini API error (${res.status}): ${body.slice(0, 300)}`);
+      err.status = res.status;
+      throw err;
+    }
+    const data = await res.json();
+    return data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "";
+  } catch (e) {
+    if (e?.name === "AbortError") {
+      const te = new Error(`Gemini request timed out after ${timeoutMs}ms.`);
+      te.status = 504;
+      throw te;
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-  const data = await res.json();
-  return data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "";
 }
 
-// Tries each model in turn, retrying transient errors (overload / rate limit /
-// 5xx) with exponential backoff so a temporary Gemini spike is invisible.
+// Walks an ordered, de-duplicated model list, each call time-boxed. Transient
+// failures (overload / rate limit / timeout / 5xx) fall through to the next
+// model. The whole plan is bounded (<= 3 calls * 13s) to stay under the 60s
+// function limit, so a 503 spike on one model never hangs the request.
 async function callGemini({ apiKey, models, system, user }) {
+  const plan = models.slice(0, 3);
   let lastErr;
-  for (const model of models) {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const text = await callGeminiOnce({ apiKey, model, system, user });
-        if (text) return text;
-        lastErr = new Error("Empty response from Gemini.");
-      } catch (e) {
-        lastErr = e;
-        const transient = e.status === 503 || e.status === 429 || (e.status >= 500 && e.status < 600);
-        if (!transient) break; // permanent error for this model — move to next model
-        if (attempt < 2) await sleep(500 * Math.pow(2, attempt)); // 500ms, 1s
-      }
+  for (let i = 0; i < plan.length; i++) {
+    try {
+      const text = await callGeminiOnce({ apiKey, model: plan[i], system, user });
+      if (text) return text;
+      lastErr = new Error("Empty response from Gemini.");
+    } catch (e) {
+      lastErr = e;
+      const retryable =
+        e.status === 503 || e.status === 429 || e.status === 504 || (e.status >= 500 && e.status < 600);
+      // Permanent errors (e.g. 400/404 for a model) also just move on to the
+      // next candidate. Small pause before the next try on transient errors.
+      if (retryable && i < plan.length - 1) await sleep(300);
     }
   }
   throw lastErr || new Error("Gemini request failed.");
@@ -134,14 +152,20 @@ async function callAnthropic({ apiKey, model, system, user }) {
 
 export async function POST(req) {
   try {
-    const { article, focusKeyword } = await req.json();
+    const body = await req.json();
+    let { article, focusKeyword } = body || {};
 
-    if (!article || article.trim().length < 80) {
+    if (!article || typeof article !== "string" || article.trim().length < 80) {
       return NextResponse.json(
-        { error: "Please paste an article of at least ~80 characters." },
+        { error: "Please paste a story of at least ~80 characters." },
         { status: 400 }
       );
     }
+
+    // Cap input so a single request can't run up huge token cost / latency.
+    const MAX_CHARS = 30000;
+    if (article.length > MAX_CHARS) article = article.slice(0, MAX_CHARS);
+    if (typeof focusKeyword === "string") focusKeyword = focusKeyword.slice(0, 200);
 
     const geminiKey = process.env.GEMINI_API_KEY;
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
@@ -154,10 +178,20 @@ export async function POST(req) {
 
     if (geminiKey) {
       provider = "gemini";
-      const primary = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-      // Primary first, then lighter / aliased models that tend to stay available
-      // when the primary is under high demand.
-      const models = [...new Set([primary, "gemini-2.5-flash-lite", "gemini-flash-latest"])];
+      // flash-lite is fast, cheap and the most consistently-available model —
+      // ideal as the primary for this lightweight task. flash / flash-latest
+      // are higher-quality fallbacks if it ever fails. An explicit GEMINI_MODEL
+      // is honored as an extra candidate.
+      const models = [
+        ...new Set(
+          [
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-flash-latest",
+            process.env.GEMINI_MODEL,
+          ].filter(Boolean)
+        ),
+      ];
       raw = await callGemini({ apiKey: geminiKey, models, system, user });
     } else if (anthropicKey) {
       provider = "anthropic";
