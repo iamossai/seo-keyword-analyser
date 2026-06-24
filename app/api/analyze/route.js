@@ -186,17 +186,18 @@ export async function POST(req) {
 
     if (geminiKey) {
       provider = "gemini";
-      // flash-lite is fast, cheap and the most consistently-available model —
-      // ideal as the primary for this lightweight task. flash / flash-latest
-      // are higher-quality fallbacks if it ever fails. An explicit GEMINI_MODEL
-      // is honored as an extra candidate.
+      // With paid billing enabled, gemini-2.5-flash is the quality sweet spot
+      // for this task. GEMINI_MODEL (Vercel env) overrides the primary, so the
+      // model can be changed without a code edit. flash-lite stays in the chain
+      // as a fast, always-available fallback if the primary is overloaded.
+      const envModel = (process.env.GEMINI_MODEL || "").trim();
       const models = [
         ...new Set(
           [
-            "gemini-2.5-flash-lite",
+            envModel || "gemini-2.5-flash",
             "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
             "gemini-flash-latest",
-            process.env.GEMINI_MODEL,
           ].filter(Boolean)
         ),
       ];
