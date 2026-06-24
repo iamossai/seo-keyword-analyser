@@ -58,7 +58,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // One Gemini call with a hard per-request timeout. Without this, a hung
 // upstream connection would block until Vercel kills the function at 60s.
-async function callGeminiOnce({ apiKey, model, system, user, timeoutMs = 13000 }) {
+async function callGeminiOnce({ apiKey, model, system, user, timeoutMs = 18000 }) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -105,19 +105,26 @@ async function callGeminiOnce({ apiKey, model, system, user, timeoutMs = 13000 }
 // function limit, so a 503 spike on one model never hangs the request.
 async function callGemini({ apiKey, models, system, user }) {
   const plan = models.slice(0, 3);
+  // Overall wall-clock budget, comfortably under the 60s function limit. Each
+  // attempt is time-boxed to whatever remains, so we try as many fallback
+  // models as fit without ever risking a hard 60s function timeout.
+  const deadline = Date.now() + 52000;
   let lastErr;
   for (let i = 0; i < plan.length; i++) {
+    const remaining = deadline - Date.now();
+    if (remaining < 4000) break; // not enough time for a meaningful attempt
+    const timeoutMs = Math.min(18000, remaining - 500);
     try {
-      const text = await callGeminiOnce({ apiKey, model: plan[i], system, user });
+      const text = await callGeminiOnce({ apiKey, model: plan[i], system, user, timeoutMs });
       if (text) return text;
       lastErr = new Error("Empty response from Gemini.");
     } catch (e) {
       lastErr = e;
       const retryable =
         e.status === 503 || e.status === 429 || e.status === 504 || (e.status >= 500 && e.status < 600);
-      // Permanent errors (e.g. 400/404 for a model) also just move on to the
-      // next candidate. Small pause before the next try on transient errors.
-      if (retryable && i < plan.length - 1) await sleep(300);
+      // Permanent errors (e.g. 400/404 for a model) also move on to the next
+      // candidate. Brief pause before the next try on transient errors.
+      if (retryable && i < plan.length - 1 && deadline - Date.now() > 4000) await sleep(250);
     }
   }
   throw lastErr || new Error("Gemini request failed.");
@@ -224,7 +231,7 @@ export async function POST(req) {
     return NextResponse.json({ provider, result });
   } catch (err) {
     const msg = err?.message || "Unexpected server error.";
-    if (/\b(503|UNAVAILABLE|high demand|overloaded)\b/i.test(msg)) {
+    if (/\b(503|504|UNAVAILABLE|high demand|overloaded|timed out)\b/i.test(msg)) {
       return NextResponse.json(
         {
           error:
