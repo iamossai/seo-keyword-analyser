@@ -120,6 +120,7 @@ async function callGemini({ apiKey, models, system, user }) {
       lastErr = new Error("Empty response from Gemini.");
     } catch (e) {
       lastErr = e;
+      console.warn(`[gemini] model "${plan[i]}" failed: ${e.status || "?"} ${e.message}`);
       const retryable =
         e.status === 503 || e.status === 429 || e.status === 504 || (e.status >= 500 && e.status < 600);
       // Permanent errors (e.g. 400/404 for a model) also move on to the next
